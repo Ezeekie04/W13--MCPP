@@ -1,7 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import {
-  StyleSheet,
-  View,
+import {  StyleSheet,  View,
   Text,
   Button,
   Image,
@@ -9,7 +7,7 @@ import {
   Platform,
 } from 'react-native';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
-import RNFS from 'react-native-fs';
+import * as FileSystem from 'expo-file-system';
 import Geolocation from 'react-native-geolocation-service';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebaseConfig';
@@ -130,24 +128,29 @@ const App = () => {
   };
 
   const saveFile = async (imageUri: string) => {
-  const path = RNFS.PicturesDirectoryPath + '/image_' + Date.now() + '.jpg';
-  try {
-    await RNFS.copyFile(imageUri, path);
-    
-    const location = await returnLocation() as { latitude: number; longitude: number } | null;
+  const filename = `image_${Date.now()}.jpg`;
+  const destination = FileSystem.documentDirectory + filename;
 
+  try {
+    await FileSystem.copyAsync({
+      from: imageUri,
+      to: destination,
+    });
+
+    const location = await returnLocation();
     if (location && location.latitude != null && location.longitude != null) {
-      await saveToFirestore(path, location);
+      await saveToFirestore(destination, location);
     }
   } catch (error) {
-    console.error('Error copying file:', error);
+    console.error('Error saving file:', error);
   }
 };
 
 
-  const returnLocation = async () => {
+
+  const returnLocation = async (): Promise<Coordinates | null> => {
   const hasPermission = await hasLocationPermission();
-  if (!hasPermission) return { latitude: null, longitude: null };
+  if (!hasPermission) return null;
 
   return new Promise((resolve, reject) => {
     Geolocation.getCurrentPosition(
@@ -216,16 +219,21 @@ const App = () => {
     return status === PermissionsAndroid.RESULTS.GRANTED;
   };
 
-  const saveLocation = async coords => {
-    const path = RNFS.DownloadDirectoryPath + '/location_' + Date.now() + '.txt';
-    const data = `Longitude: ${coords.longitude}\nLatitude: ${coords.latitude}`;
-    try {
-      await RNFS.writeFile(path, data, 'utf8');
-      console.log('Location saved to:', path);
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  const saveLocation = async (coords: Coordinates) => {
+  const data = `Longitude: ${coords.longitude}\nLatitude: ${coords.latitude}`;
+  const filename = `location_${Date.now()}.txt`;
+  const path = FileSystem.documentDirectory + filename;
+
+  try {
+    await FileSystem.writeAsStringAsync(path, data, {
+      encoding: FileSystem.EncodingType.UTF8,
+    });
+    console.log('Location saved to:', path);
+  } catch (err) {
+    console.error(err);
+  }
+};
+
 
   const saveToFirestore = async (imagePath: string, location: Coordinates) => {
     let firestoreSuccess = false;
